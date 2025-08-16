@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Text Editor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .editor-container {
+            padding: 30px;
+        }
+
+        .text-area {
+            width: 100%;
+            min-height: 300px;
+            padding: 20px;
+            border: 2px solid #e1e5e9;
+            border-radius: 10px;
+            font-size: 16px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            resize: vertical;
+            transition: border-color 0.3s ease;
+        }
+
+        .text-area:focus {
+            outline: none;
+            border-color: #4facfe;
+            box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.1);
+        }
+
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-autocorrect {
+            background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+            color: #333;
+        }
+
+        .btn-suggestion {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            color: #333;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(0,0,0,0.3);
+            border-radius: 50%;
+            border-top-color: #333;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .status {
+            margin-top: 15px;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .word-counter {
+            margin-top: 10px;
+            text-align: right;
+            color: #666;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Smart Text Editor</h1>
+            <p>Real-time autocorrect and suggestions powered by Ollama AI</p>
+        </div>
+        
+        <div class="editor-container">
+            <textarea 
+                class="text-area" 
+                id="textEditor"
+                placeholder="Start typing... Press space for autocorrect and suggestions!"
+            ></textarea>
+            
+            <div class="word-counter">
+                <span id="wordCount">0 words, 0 characters</span>
+            </div>
+            
+            <div class="controls">
+                <button class="btn btn-autocorrect" id="autocorrectBtn" style="display: none;">
+                    <span class="btn-text">Apply Autocorrect</span>
+                </button>
+                
+                <button class="btn btn-suggestion" id="suggestionBtn" style="display: none;">
+                    <span class="btn-text">Apply Suggestion</span>
+                </button>
+            </div>
+            
+            <div class="status" id="status"></div>
+        </div>
+    </div>
+
+    <script>
+        class SmartTextEditor {
+            constructor() {
+                this.textArea = document.getElementById('textEditor');
+                this.autocorrectBtn = document.getElementById('autocorrectBtn');
+                this.suggestionBtn = document.getElementById('suggestionBtn');
+                this.status = document.getElementById('status');
+                this.wordCount = document.getElementById('wordCount');
+                
+                this.currentAutocorrect = '';
+                this.currentSuggestion = '';
+                this.lastWord = '';
+                this.cursorPosition = 0;
+                
+                this.init();
+            }
+
+            init() {
+                this.textArea.addEventListener('keydown', (e) => this.handleKeydown(e));
+                this.textArea.addEventListener('input', () => this.updateWordCount());
+                this.autocorrectBtn.addEventListener('click', () => this.applyAutocorrect());
+                this.suggestionBtn.addEventListener('click', () => this.applySuggestion());
+                
+                this.updateWordCount();
+            }
+
+            handleKeydown(e) {
+                if (e.code === 'Space') {
+                    setTimeout(() => this.handleSpacePress(), 0);
+                }
+            }
+
+            async handleSpacePress() {
+                const text = this.textArea.value;
+                const cursorPos = this.textArea.selectionStart;
+                
+                // Get the last word before the space
+                const words = text.substring(0, cursorPos).trim().split(/\s+/);
+                this.lastWord = words[words.length - 1] || '';
+                
+                if (this.lastWord) {
+                    this.cursorPosition = cursorPos;
+                    await Promise.all([
+                        this.getAutocorrect(this.lastWord),
+                        this.getSuggestion(text.trim())
+                    ]);
+                }
+            }
+
+            async callOllamaAPI(content) {
+                try {
+                    const response = await fetch('http://localhost:11434/api/chat', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            model: "gemma2:2b",
+                            messages: [{
+                                role: "user",
+                                content: content
+                            }],
+                            stream: false,
+                            temperature: 0
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    return data.message.content.trim();
+                } catch (error) {
+                    console.error('API call failed:', error);
+                    this.showStatus('error', `API Error: ${error.message}`);
+                    return null;
+                }
+            }
+
+            async getAutocorrect(word) {
+                const content = `Act as autocorrect expert just correct user input if needed ,dont add anything else or response any other text or sentence along with the response.Give response in one word dont. Input : ${word}.Give one word response only`;
+                
+                const correctedWord = await this.callOllamaAPI(content);
+                
+                if (correctedWord && correctedWord.toLowerCase() !== word.toLowerCase()) {
+                    this.currentAutocorrect = correctedWord;
+                    this.showAutocorrectButton(correctedWord);
+                } else {
+                    this.hideAutocorrectButton();
+                }
+            }
+
+            async getSuggestion(entireString) {
+                const content = `Act as auto suggestion expert just suggest next word based on user input ,dont add anything else or response any other text or sentence along with the response.Give response in one word only.Input :${entireString}`;
+                
+                const suggestion = await this.callOllamaAPI(content);
+                
+                if (suggestion) {
+                    this.currentSuggestion = suggestion;
+                    this.showSuggestionButton(suggestion);
+                }
+            }
+
+            showAutocorrectButton(word) {
+                this.autocorrectBtn.style.display = 'flex';
+                this.autocorrectBtn.querySelector('.btn-text').textContent = `Replace with: ${word}`;
+            }
+
+            hideAutocorrectButton() {
+                this.autocorrectBtn.style.display = 'none';
+            }
+
+            showSuggestionButton(word) {
+                this.suggestionBtn.style.display = 'flex';
+                this.suggestionBtn.querySelector('.btn-text').textContent = `Add: ${word}`;
+            }
+
+            hideSuggestionButton() {
+                this.suggestionBtn.style.display = 'none';
+            }
+
+            applyAutocorrect() {
+                if (!this.currentAutocorrect || !this.lastWord) return;
+
+                const text = this.textArea.value;
+                const beforeCursor = text.substring(0, this.cursorPosition);
+                const afterCursor = text.substring(this.cursorPosition);
+                
+                // Find and replace the last occurrence of the word before cursor
+                const lastWordIndex = beforeCursor.lastIndexOf(this.lastWord);
+                if (lastWordIndex !== -1) {
+                    const newText = 
+                        beforeCursor.substring(0, lastWordIndex) + 
+                        this.currentAutocorrect + 
+                        beforeCursor.substring(lastWordIndex + this.lastWord.length) +
+                        afterCursor;
+                    
+                    this.textArea.value = newText;
+                    
+                    // Update cursor position
+                    const newCursorPos = this.cursorPosition + (this.currentAutocorrect.length - this.lastWord.length);
+                    this.textArea.setSelectionRange(newCursorPos, newCursorPos);
+                    this.textArea.focus();
+                    
+                    this.showStatus('success', `Corrected "${this.lastWord}" to "${this.currentAutocorrect}"`);
+                    this.updateWordCount();
+                }
+
+                this.hideAutocorrectButton();
+            }
+
+            applySuggestion() {
+                if (!this.currentSuggestion) return;
+
+                const cursorPos = this.textArea.selectionStart;
+                const text = this.textArea.value;
+                
+                const newText = 
+                    text.substring(0, cursorPos) + 
+                    this.currentSuggestion + ' ' +
+                    text.substring(cursorPos);
+                
+                this.textArea.value = newText;
+                
+                // Set cursor after the inserted suggestion
+                const newCursorPos = cursorPos + this.currentSuggestion.length + 1;
+                this.textArea.setSelectionRange(newCursorPos, newCursorPos);
+                this.textArea.focus();
+                
+                this.showStatus('success', `Added suggestion: "${this.currentSuggestion}"`);
+                this.updateWordCount();
+                this.hideSuggestionButton();
+            }
+
+            updateWordCount() {
+                const text = this.textArea.value;
+                const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+                const chars = text.length;
+                this.wordCount.textContent = `${words} words, ${chars} characters`;
+            }
+
+            showStatus(type, message) {
+                this.status.className = `status ${type}`;
+                this.status.textContent = message;
+                this.status.style.display = 'block';
+                
+                setTimeout(() => {
+                    this.status.style.display = 'none';
+                }, 3000);
+            }
+        }
+
+        // Initialize the editor when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new SmartTextEditor();
+        });
+    </script>
+</body>
+</html>
